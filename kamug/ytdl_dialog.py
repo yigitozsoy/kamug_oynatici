@@ -2,6 +2,7 @@
 indir → kamug'da aç. Oynatma listesinde videolar tek tek seçilir, sırayla ya da aynı anda indirilir."""
 import os
 import threading
+import time
 
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
@@ -44,9 +45,13 @@ class _Job(QObject):
     changed = pyqtSignal(object)
     done = pyqtSignal(object)
 
-    def __init__(self, parent, make_cmd, row=None, index=0):
+    def __init__(self, parent, make_cmd, row=None, index=0, photo=False, folder=None):
         super().__init__(parent)
         self.make_cmd = make_cmd        # impersonate -> komut
+        self.photo = photo              # gallery-dl ile fotoğraf gönderisi (birden çok dosya)
+        self.folder = folder
+        self.paths = []
+        self.started = 0.0
         self.row = row
         self.index = index
         self.impersonate = False
@@ -58,6 +63,7 @@ class _Job(QObject):
         self.proc = None
 
     def start(self):
+        self.started = time.time()
         self.state = "run" if self.state != "retry" else "retry"
         self.out = ""
         p = _process(self)
@@ -75,6 +81,11 @@ class _Job(QObject):
         data = bytes(self.proc.readAllStandardOutput()).decode("utf-8", "replace")
         self.out = (self.out + data)[-20000:]
         for line in data.splitlines():
+            if self.photo:
+                f = ytdl.parse_gallery_line(line)
+                if f and f not in self.paths:
+                    self.paths.append(f)
+                continue
             r = ytdl.parse_line(line)
             if r is None:
                 continue
@@ -91,7 +102,7 @@ class _Job(QObject):
         if err == QProcess.ProcessError.FailedToStart and self.proc is not None:
             self.proc = None
             self.state = "fail"
-            self.out += "\nyt-dlp"
+            self.out += "\ngallery-dl" if self.photo else "\nyt-dlp"
             self.done.emit(self)
 
     def _finished(self, code):
@@ -99,9 +110,16 @@ class _Job(QObject):
             return
         self._read()
         self.proc = None
+        if self.photo:
+            self.paths = [f for f in self.paths if os.path.isfile(f)]
+            if not self.paths:
+                self._scan_new()
+            # açılacak dosya: fotoğraf / video (TikTok slaytının müziği değil)
+            media = [f for f in self.paths if not f.lower().endswith((".mp3", ".m4a", ".aac", ".ogg", ".opus"))]
+            self.path = (media or self.paths or [None])[0]
         if self.path and os.path.exists(self.path):       # altyazı inmese de (--ignore-errors) video indiyse tamam
             self.state, self.frac = "done", 1.0
-        elif not self.impersonate and ytdl.blocked(self.out):
+        elif not self.photo and not self.impersonate and ytdl.blocked(self.out):
             self.impersonate = True                         # site bot korumasıyla reddetti
             self.state = "retry"
             self.start()
@@ -110,6 +128,16 @@ class _Job(QObject):
             self.state = "fail"
         self.changed.emit(self)
         self.done.emit(self)
+
+    def _scan_new(self):
+        """Yedek: çıktıda yol yoksa klasörde bu indirme sırasında oluşan dosyalar."""
+        try:
+            names = os.listdir(self.folder or "")
+        except OSError:
+            return
+        new = [os.path.join(self.folder, n) for n in names if not n.endswith((".part", ".tmp"))]
+        new = [f for f in new if os.path.isfile(f) and os.path.getmtime(f) >= self.started - 2]
+        self.paths = sorted(new)
 
     def cancel(self):
         if self.proc is not None:
@@ -388,10 +416,14 @@ class DownloadDialog(ThemedDialog):
         self.info_buf = ""
         p = _process(self)
 
+        self.info_all = ""
+
         def read():
             if self.info_proc is not p:
                 return
-            self.info_buf += bytes(p.readAllStandardOutput()).decode("utf-8", "replace")
+            data = bytes(p.readAllStandardOutput()).decode("utf-8", "replace")
+            self.info_all = (self.info_all + data)[-20000:]
+            self.info_buf += data
             *lines, self.info_buf = self.info_buf.split("\n")
             for line in lines:
                 e = ytdl.parse_entry(line)
@@ -422,6 +454,10 @@ class DownloadDialog(ThemedDialog):
             self.lbl_info.setText("")
             self._show_list(False)
             return
+        if ytdl.photo_first(url):
+            self._show_list(False)
+            self.lbl_info.setText(t("yt_info_photo"))
+            return
         if not ytdl.installed():
             return                       # araç indirilince (İndir'e basınca) bilgi gelir
         if ytdl.needs_update_check() and not self._update_checked:
@@ -451,7 +487,12 @@ class DownloadDialog(ThemedDialog):
                 self._show_single()
             self._run_info(ytdl.info_command(url, playlist=False, quality=self.cmb_q.currentData(),
                                              content=self._content(), cookies=cookies),
-                           got, lambda: self.single is None and self.lbl_info.setText(t("yt_info_none")))
+                           got, self._single_end)
+
+    def _single_end(self):
+        if self.single is None:
+            photo = ytdl.photo_first(self._url()) or ytdl.photo_candidate(self.info_all)
+            self.lbl_info.setText(t("yt_info_photo") if photo else t("yt_info_none"))
 
     def _show_single(self):
         e = self.single
@@ -560,8 +601,8 @@ class DownloadDialog(ThemedDialog):
         self._sync_controls()
 
     # ------------------------------------------------------------------ araç kurulumu
-    def _ensure_tool(self, then):
-        if ytdl.installed():
+    def _ensure_tool(self, then, tool="yt-dlp"):
+        if ytdl.installed(tool):
             then()
             return
         self._installing = True
@@ -569,11 +610,12 @@ class DownloadDialog(ThemedDialog):
         self._cancel_install = False
         self._sync_controls()
         self.bar.setRange(0, 0)
-        self._status(t("yt_installing"))
+        self._installing_key = "yt_installing_photo" if tool == "gallery" else "yt_installing"
+        self._status(t(self._installing_key))
 
         def work():
             try:
-                ytdl.install(lambda a, b: self._install_progress.emit(a, b), lambda: self._cancel_install)
+                ytdl.install(lambda a, b: self._install_progress.emit(a, b), lambda: self._cancel_install, tool)
                 self._install_done.emit("")
             except InterruptedError:
                 self._install_done.emit("cancel")
@@ -585,7 +627,7 @@ class DownloadDialog(ThemedDialog):
         if total:
             self.bar.setRange(0, 1000)
             self.bar.setValue(int(got * 1000 / total))
-            self._status(t("yt_installing") + f"  {_mb(got)} / {_mb(total)}")
+            self._status(t(getattr(self, "_installing_key", "yt_installing")) + f"  {_mb(got)} / {_mb(total)}")
 
     def _on_install_done(self, err):
         self._installing = False
@@ -607,6 +649,10 @@ class DownloadDialog(ThemedDialog):
         if not self._url():
             return
         self._save_prefs()
+        if not self.list_mode and ytdl.photo_first(self._url()):
+            url = self._url()
+            self._ensure_tool(lambda: self._download_photos(url), "gallery")
+            return
         if not ytdl.installed():
             def after():
                 if self._want_list():
@@ -666,6 +712,36 @@ class DownloadDialog(ThemedDialog):
         self._status(t("yt_starting"))
         self._pump()
 
+    def _download_photos(self, url):
+        """Fotoğraf gönderisi: gallery-dl ile gönderideki tüm dosyalar (günde bir kez önce kendini günceller)."""
+        folder = self.lbl_folder.text()
+        cookies = self.cmb_c.currentData() or ""
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError as e:
+            self._status(str(e))
+            return
+        self._stop_info()
+
+        def make(_imp):
+            return ytdl.gallery_command(url, folder, cookies)
+        job = _Job(self, make, photo=True, folder=folder)
+        job.changed.connect(self._job_changed)
+        job.done.connect(self._job_done)
+        self.jobs = [job]
+        self.parallel = 1
+        self.downloading = True
+        self._sync_controls()
+        self.bar.setRange(0, 0)
+        self._status(t("yt_photo_downloading", n=0))
+        if ytdl.gallery_needs_update():
+            p = _process(self)
+            p.finished.connect(lambda *_a: self.downloading and self._pump())
+            cmd = ytdl.gallery_update_command()
+            p.start(cmd[0], cmd[1:])
+        else:
+            self._pump()
+
     def _pump(self):
         running = sum(1 for j in self.jobs if j.state in ("run", "merge", "retry"))
         for j in self.jobs:
@@ -697,7 +773,10 @@ class DownloadDialog(ThemedDialog):
         frac = sum(x.frac if x.state != "done" else 1.0 for x in self.jobs) / n
         self.bar.setRange(0, 1000)
         self.bar.setValue(int(frac * 1000))
-        if n == 1:
+        if j.photo:
+            self.bar.setRange(0, 0)
+            self._status(t("yt_photo_downloading", n=len(j.paths)))
+        elif n == 1:
             if j.state == "merge":
                 self.bar.setRange(0, 0)
                 self._status(t("yt_merging"))
@@ -725,11 +804,21 @@ class DownloadDialog(ThemedDialog):
         self._sync_controls()
         ok = sorted((j for j in self.jobs if j.state == "done" and j.path), key=lambda j: j.index)
         failed = [j for j in self.jobs if j.state == "fail"]
+        if (len(self.jobs) == 1 and failed and not failed[0].photo and not self.list_mode
+                and ytdl.photo_candidate(failed[0].out)):
+            url = self._url()                  # video yok: fotoğraf gönderisi olabilir, gallery-dl ile dene
+            self._ensure_tool(lambda: self._download_photos(url), "gallery")
+            return
         if ok:
             self.win.open_paths([ok[0].path])
         if ok and not failed:
             self._status(t("yt_done"))
             self.accept()
+            return
+        if len(self.jobs) == 1 and failed and failed[0].photo:
+            j = failed[0]
+            hint = ytdl.error_hint(j.out)
+            self._status(t("yt_photo_failed") + "\n" + (t(hint) + "\n" if hint else "") + ytdl.gallery_error(j.out))
             return
         if len(self.jobs) == 1 and failed:
             j = failed[0]

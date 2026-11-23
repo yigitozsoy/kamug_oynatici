@@ -10,6 +10,10 @@ from .config import DATA_DIR, prefs
 
 TOOL_DIR = os.path.join(DATA_DIR, "tools")
 TOOL_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+# Fotoğraf gönderileri (Instagram, TikTok fotoğraf, X, Reddit, Pinterest…): yt-dlp yalnızca video indirir; video
+# bulunamazsa gallery-dl devreye girer. O da kuruluma gömülmez, ilk gerekince tools klasörüne iner. Proje
+# Codeberg'e taşındı (GitHub sürümlerinde exe yok); son sürüm API'den bulunur, SHA256SUMS ile doğrulanır.
+GALLERY_API = "https://codeberg.org/api/v1/repos/mikf/gallery-dl/releases/latest"
 
 _YT = re.compile(r"(?:https?://)?(?:www\.|m\.|music\.)?(?:youtube\.com/(?:watch\?\S*?v=|shorts/|live/|embed/)"
                  r"|youtu\.be/)[\w-]{6,}\S*", re.I)
@@ -25,8 +29,12 @@ def exe_path():
     return os.path.join(TOOL_DIR, "yt-dlp.exe")
 
 
-def installed():
-    p = exe_path()
+def gallery_path():
+    return os.path.join(TOOL_DIR, "gallery-dl.exe")
+
+
+def installed(tool="yt-dlp"):
+    p = gallery_path() if tool == "gallery" else exe_path()
     return os.path.isfile(p) and os.path.getsize(p) > 1_000_000
 
 
@@ -44,11 +52,14 @@ def default_folder():
     return prefs.get("yt_folder") or os.path.join(os.path.expanduser("~"), "Videos", "kamug")
 
 
-def install(progress=None, cancelled=lambda: False):
-    """yt-dlp.exe'yi indirir. progress(indirilen, toplam). Hata olursa OSError."""
+def install(progress=None, cancelled=lambda: False, tool="yt-dlp"):
+    """yt-dlp.exe'yi (tool="gallery": gallery-dl.exe'yi) indirir. progress(indirilen, toplam). Hata olursa OSError."""
     os.makedirs(TOOL_DIR, exist_ok=True)
-    tmp = exe_path() + ".part"
-    req = urllib.request.Request(TOOL_URL, headers={"User-Agent": "kamug"})
+    gallery = tool == "gallery"
+    dest = gallery_path() if gallery else exe_path()
+    tmp = dest + ".part"
+    url, digest = (_gallery_asset() if gallery else (TOOL_URL, None))
+    req = urllib.request.Request(url, headers={"User-Agent": "kamug"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r, open(tmp, "wb") as f:
             total = int(r.headers.get("Content-Length") or 0)
@@ -64,15 +75,49 @@ def install(progress=None, cancelled=lambda: False):
                 if progress:
                     progress(got, total)
         if os.path.getsize(tmp) < 1_000_000:
-            raise OSError("yt-dlp.exe")
-        os.replace(tmp, exe_path())
-        prefs.set("yt_checked", time.time())
+            raise OSError(os.path.basename(dest))
+        if digest and _sha256(tmp) != digest:
+            raise OSError(os.path.basename(dest) + ": SHA256")
+        os.replace(tmp, dest)
+        prefs.set("gdl_checked" if gallery else "yt_checked", time.time())
     finally:
         if os.path.exists(tmp):
             try:
                 os.remove(tmp)
             except OSError:
                 pass
+
+
+def _sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _gallery_asset():
+    """(gallery-dl.exe indirme adresi, beklenen SHA256 ya da None) — Codeberg'deki son sürümden."""
+    import json
+    req = urllib.request.Request(GALLERY_API, headers={"User-Agent": "kamug", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        assets = {a["name"]: a["browser_download_url"] for a in json.load(r).get("assets", [])}
+    url = assets.get("gallery-dl.exe")
+    if not url:
+        raise OSError("gallery-dl.exe")
+    digest = None
+    if assets.get("SHA256SUMS"):
+        try:
+            req = urllib.request.Request(assets["SHA256SUMS"], headers={"User-Agent": "kamug"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                for line in r.read().decode("utf-8", "replace").splitlines():
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1].lstrip("*") == "gallery-dl.exe":
+                        digest = parts[0].lower()
+        except OSError:
+            pass
+    return url, digest
 
 
 def needs_update_check():
@@ -85,6 +130,15 @@ def update_command():
 
 def mark_checked():
     prefs.set("yt_checked", time.time())
+
+
+def gallery_needs_update():
+    return time.time() - float(prefs.get("gdl_checked", 0) or 0) > 24 * 3600
+
+
+def gallery_update_command():
+    prefs.set("gdl_checked", time.time())
+    return [gallery_path(), "--update"]
 
 
 def sub_langs():
@@ -230,7 +284,8 @@ def error_hint(text):
         return "yt_blocked"
     if any(k in low for k in ("cookie", "dpapi", "decrypt")) and ("could not" in low or "failed" in low):
         return "yt_cookie_failed"
-    if any(k in low for k in ("sign in", "members", "private video", "login", "confirm your age")):
+    if any(k in low for k in ("sign in", "members", "private video", "login", "confirm your age",
+                              "authentication is required", "blocked by network security")):
         return "yt_need_login"
     return None
 
@@ -239,3 +294,49 @@ def last_error(text):
     """yt-dlp çıktısından okunur hata satırı."""
     errs = [ln.strip() for ln in (text or "").splitlines() if ln.strip().startswith("ERROR")]
     return (errs[-1] if errs else (text or "").strip()[-300:]).replace("ERROR: ", "")
+
+
+# ---------------------------------------------------------------------- fotoğraf (gallery-dl)
+_NO_VIDEO = ("no video", "no media", "unsupported url", "there is no video", "not a video", "no formats",
+             "image post", "photo post", "only images")
+
+
+def photo_first(url):
+    """Doğrudan fotoğraf gösteren linkler (yt-dlp hiç denenmez): TikTok fotoğraf gönderisi, Pinterest, Reddit
+    galerisi / resmi, Imgur… Diğerlerinde (Instagram, X, Reddit gönderisi) önce video denenir."""
+    low = (url or "").lower()
+    return ("tiktok.com/" in low and "/photo/" in low) or any(
+        k in low for k in ("pinterest.", "pin.it/", "i.redd.it/", "preview.redd.it/", "reddit.com/gallery/",
+                           "imgur.com/", "flickr.com/", "deviantart.com/"))
+
+
+def photo_candidate(text):
+    """yt-dlp "burada video yok" dediyse (fotoğraf gönderisi olabilir) True."""
+    low = (text or "").lower()
+    return any(k in low for k in _NO_VIDEO) and not blocked(text)
+
+
+def gallery_command(url, folder, cookies=""):
+    """Gönderideki tüm fotoğraf (ve varsa video) dosyaları folder içine. İnen her dosyanın yolu stdout'a bir satır
+    olarak yazılır ("# yol" = zaten vardı)."""
+    cmd = [gallery_path(), "-D", folder, "--no-mtime", "-o", "output.mode=pipe", "-o", "output.skip=true",
+           # kısa, sıralı adlar: tiktok_7240568259186019630_03.jpg (gönderi metni dosya adına girmesin)
+           "-f", "{category}_{tweet_id|post_id|id}{num:?_//>02}.{extension}"]
+    if cookies:
+        cmd += ["--cookies", cookies] if cookies.lower().endswith(".txt") else ["--cookies-from-browser", cookies]
+    return cmd + ["--", url]
+
+
+def parse_gallery_line(line):
+    """gallery-dl çıktı satırı → inen dosyanın yolu (yoksa None). Yol indirme başlarken yazılır, dosya henüz
+    olmayabilir: varlığı iş bitince denetlenir."""
+    s = (line or "").strip()
+    if s.startswith("# "):
+        s = s[2:].strip()
+    return s if len(s) > 3 and s[1:3] in (":\\", ":/") and not s.lower().endswith(".part") else None
+
+
+def gallery_error(text):
+    """gallery-dl çıktısından okunur hata satırı."""
+    errs = [ln.strip() for ln in (text or "").splitlines() if "error" in ln.lower()]
+    return (errs[-1] if errs else (text or "").strip()[-300:])

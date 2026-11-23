@@ -407,14 +407,16 @@ S = {
     "hold_right": ("Yalnızca sağ yarısı", "Right half only"),
     "yt_title": ("Linkten indir", "Download from link"),
     "yt_open_link": ("Linkten aç", "Open link"),
-    "yt_link": ("Video linki", "Video link"),
+    "yt_link": ("Video ya da fotoğraf linki", "Video or photo link"),
     "yt_quality": ("Kalite", "Quality"),
     "yt_q_best": ("En iyi", "Best"), "yt_q_1080": ("1080p", "1080p"), "yt_q_720": ("720p", "720p"),
     "yt_q_480": ("480p", "480p"), "yt_q_audio": ("Yalnızca ses (m4a)", "Audio only (m4a)"),
     "yt_folder": ("İndirme klasörü", "Download folder"),
     "yt_download": ("İndir ve aç", "Download and open"),
-    "yt_note": ("Yalnızca hakkına sahip olduğun videolar için (ör. kendi videoların). İndirme yt-dlp ile yapılır.",
-                "Only for videos you have the rights to (e.g. your own). Downloads are done with yt-dlp."),
+    "yt_note": ("Yalnızca hakkına sahip olduğun içerikler için (ör. kendi videoların). Videolar yt-dlp, fotoğraflar gallery-dl "
+                "ile indirilir.",
+                "Only for content you have the rights to (e.g. your own videos). Videos are downloaded with yt-dlp, "
+                "photos with gallery-dl."),
     "yt_first_time": ("İlk kullanımda indirme aracı (yt-dlp, ~18 MB, github.com/yt-dlp) bir kez indirilecek.",
                       "On first use the download tool (yt-dlp, ~18 MB, github.com/yt-dlp) will be downloaded once."),
     "yt_installing": ("İndirme aracı (yt-dlp) indiriliyor…", "Downloading the download tool (yt-dlp)…"),
@@ -438,6 +440,12 @@ S = {
     "yt_mode_seq": ("Sırayla (tek tek)", "One by one"),
     "yt_mode_par": ("Aynı anda ({n} video)", "At once ({n} videos)"),
     "yt_info_loading": ("Bilgi alınıyor…", "Getting info…"),
+    "yt_info_photo": ("Fotoğraf gönderisi: İndir'e basınca içindeki tüm fotoğraflar (ve videolar) iner.",
+                      "Photo post: press Download to get all of its photos (and videos)."),
+    "yt_installing_photo": ("Fotoğraf indirme aracı (gallery-dl, ~23 MB) indiriliyor…",
+                            "Downloading the photo download tool (gallery-dl, ~23 MB)…"),
+    "yt_photo_downloading": ("Fotoğraflar indiriliyor…  {n} dosya", "Downloading photos…  {n} files"),
+    "yt_photo_failed": ("Fotoğraflar indirilemedi.", "Could not download the photos."),
     "yt_info_none": ("Bu linkte indirilebilir video bulunamadı.", "No downloadable video found at this link."),
     "yt_list_summary": ("{sel} / {n} seçili  ·  {size}", "{sel} / {n} selected  ·  {size}"),
     "yt_sizes_pending": ("{n} videonun boyutu hesaplanıyor…", "calculating size of {n} videos…"),
@@ -599,12 +607,12 @@ S = {
                          "cookies.txt dosyası ver.",
                          "Could not read the browser's cookies. Close the browser completely and retry, pick "
                          "Firefox, or give a cookies.txt file."),
-    "p_yt_enabled": ("Linkten video indir", "Download videos from links"),
-    "p_yt_enabled_desc": ("Açıkken ana sayfada \"Linkten aç\" düğmesi çıkar; Ctrl+V ile ya da linki pencereye sürükleyerek de indirebilirsin. YouTube ve binlerce site (sayfaya gömülü videolar dahil). "
-                          "Yalnızca hakkına sahip olduğun videolar için.",
+    "p_yt_enabled": ("Linkten video ve fotoğraf indir", "Download videos and photos from links"),
+    "p_yt_enabled_desc": ("Açıkken ana sayfada \"Linkten aç\" düğmesi çıkar; Ctrl+V ile ya da linki pencereye sürükleyerek de indirebilirsin. YouTube ve binlerce site (sayfaya gömülü videolar dahil); Instagram, TikTok, X, Reddit ve Pinterest'ten fotoğraflar da. "
+                          "Yalnızca hakkına sahip olduğun içerikler için.",
                           "Adds an \"Open link\" button on the home page; you can also press Ctrl+V or drag a link "
-                          "onto the window. YouTube and thousands of sites (including embedded videos). Only for "
-                          "videos you have the rights to."),
+                          "onto the window. YouTube and thousands of sites (including embedded videos); photos from "
+                          "Instagram, TikTok, X, Reddit and Pinterest too. Only for content you have the rights to."),
     "p_wheel": ("Fare tekerleği", "Mouse wheel"),
     "p_seek_step": ("← / → atlama süresi", "← / → seek step"),
     "p_confirm_delete": ("Silmeden önce sor", "Confirm before deleting"),

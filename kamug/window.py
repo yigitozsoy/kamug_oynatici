@@ -302,6 +302,7 @@ class MainWindow(QMainWindow):
         tb.open_folder.connect(self.open_folder_dialog)
         tb.theme_clicked.connect(self.toggle_theme)
         tb.pin_clicked.connect(lambda: self.set_pinned(not self._pinned))
+        tb.download_clicked.connect(lambda: self.open_link_dialog(self._clipboard_link() or ""))
         tb.prefs_clicked.connect(self.show_preferences)
         tb.sidebar_clicked.connect(self.toggle_sidebar)
         tb.search_changed.connect(self._on_search)

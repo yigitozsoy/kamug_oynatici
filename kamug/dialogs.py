@@ -69,6 +69,7 @@ LAYOUT_LABELS = {
     "titlebar": {
         "prefs": ("Seçenekler", "Preferences"), "open_file": ("Dosya aç", "Open file"),
         "open_folder": ("Klasör aç", "Open folder"), "theme": ("Karanlık/aydınlık tema", "Dark/light theme"),
+        "download": ("Linkten indir (Tercihler › Dosyalar'da açıksa)", "Download from link (when enabled in Preferences › Files)"),
         "pin": ("Her zaman üstte", "Always on top"), "panel": ("Yan paneli aç/kapat", "Toggle side panel"),
     },
     "player": {

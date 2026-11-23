@@ -10,7 +10,7 @@ SEP = "|"
 # grup adı -> (tercih anahtarı, varsayılan düzen, zorunlu (gizlenemez) anahtarlar)
 GROUPS = {
     "titlebar": ("tb_layout",
-                 [["prefs", 1], [SEP, 1], ["open_file", 0], ["open_folder", 0], ["theme", 1], ["pin", 1], ["panel", 1]],
+                 [["prefs", 1], [SEP, 1], ["open_file", 0], ["open_folder", 0], ["download", 1], ["theme", 1], ["pin", 1], ["panel", 1]],
                  ()),
     "player": ("ov_layout",
                [["prev", 1], ["play", 1], ["next", 1], ["loop", 1], ["volume", 1], ["time", 1], [SEP, 1],

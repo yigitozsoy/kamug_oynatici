@@ -13,6 +13,7 @@ class TitleBar(QWidget):
     open_folder = pyqtSignal()
     theme_clicked = pyqtSignal()
     pin_clicked = pyqtSignal()
+    download_clicked = pyqtSignal()
     prefs_clicked = pyqtSignal()
     sidebar_clicked = pyqtSignal()
     home_clicked = pyqtSignal()
@@ -81,6 +82,8 @@ class TitleBar(QWidget):
         self.btn_open.clicked.connect(self.open_file.emit)
         self.btn_folder = IconButton("folder_open", t("open_folder_tip"), 40, 22)
         self.btn_folder.clicked.connect(self.open_folder.emit)
+        self.btn_download = IconButton("download", t("yt_title"), 40, 22)
+        self.btn_download.clicked.connect(self.download_clicked.emit)
         self.btn_theme = IconButton("moon", t("theme_tip"), 40, 22)
         self.btn_theme.clicked.connect(self.theme_clicked.emit)
         self.btn_pin = IconButton("pin_outline", t("pin_tip"), 40, 21, checkable=True)
@@ -91,6 +94,7 @@ class TitleBar(QWidget):
         self.right_box.setSpacing(4)
         lay.addLayout(self.right_box)
         self._tb_widgets = {"prefs": self.btn_prefs, "open_file": self.btn_open, "open_folder": self.btn_folder,
+                            "download": self.btn_download,
                             "theme": self.btn_theme, "pin": self.btn_pin, "panel": self.btn_menu}
         self._pin_allowed = True
         lay.addSpacing(10)
@@ -122,6 +126,9 @@ class TitleBar(QWidget):
                 continue
             box.addWidget(w)
             show = bool(vis) and (key != "pin" or self._pin_allowed)
+            if key == "download":                 # yalnızca Linkten indir açıksa
+                from .config import prefs
+                show = show and bool(prefs.get("yt_enabled", False))
             w.setVisible(show)
 
     def set_search_visible(self, on):

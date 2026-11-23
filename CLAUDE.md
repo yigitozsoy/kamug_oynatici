@@ -202,7 +202,11 @@ Bunlar zor bulunmuş şeyler. Değiştirmeden önce nedenini anla.
   kullanımda GitHub'dan `%LOCALAPPDATA%\kamug\tools\yt-dlp.exe` olarak indirilir, günde bir kez `-U`. İndirme QProcess ile;
   `--progress-template` "kamug-progress ..." ve `--print after_move:kamug-file ...` satırları okunur, bitince
   `open_paths`. Tetikleyiciler: ana sayfadaki "Linkten aç", Ctrl+V (panoda YouTube linki varsa; yoksa eski V davranışı),
-  pencereye link sürükleme. Basılı tutunca hızlanma: `hold_rate` (1.5–4x), `hold_area` (anywhere | right).
+  pencereye link sürükleme, başlık çubuğundaki indir düğmesi (`download`, yalnızca yt_enabled açıkken görünür).
+  **Fotoğraflar:** yt-dlp video bulamazsa (`photo_candidate`) ya da link doğrudan fotoğrafsa (`photo_first`: TikTok
+  /photo/, Pinterest, Reddit galerisi/i.redd.it, Imgur…) gallery-dl (`tools\gallery-dl.exe`, ilk gerekince iner,
+  günde bir `--update`) gönderideki tüm dosyaları indirir; yollar `output.mode=pipe` satırlarından, olmazsa klasör
+  taramasıyla. Gerçek sitelerle denenmedi (araç indirip çalıştırmak bu oturumda izinli değildi). Basılı tutunca hızlanma: `hold_rate` (1.5–4x), `hold_area` (anywhere | right).
 - **Transkript ve OCR (transcript.py, screen_text.py, transcript_panel.py, yazit_export.py; varsayılan kapalı,
   `transcript_enabled`):** bilgi çubuğunda "Transkript" düğmesi → sağ panelde (`self.right`, `_tr_panel`) sekmeler
   Konuşma | Ekrandaki yazılar, satıra tıklayınca o ana gider, `_tick` → `set_time`. Konuşma: whisper.cpp **b5907 CPU**

@@ -926,6 +926,14 @@ def gui_tests(done):
         assert ytdl.find_url("https://www.youtube.com/shorts/abcdefghijk")
         assert ytdl.find_url("site: https://example.com/v/1.mp4 bak") == "https://example.com/v/1.mp4"
         assert ytdl.find_url("link yok") is None
+        # fotoğraf gönderileri (gallery-dl)
+        assert ytdl.photo_first("https://www.tiktok.com/@a/photo/123")
+        assert ytdl.photo_first("https://www.reddit.com/gallery/abc") and ytdl.photo_first("https://pin.it/x")
+        assert not ytdl.photo_first("https://www.instagram.com/p/abc/")
+        assert ytdl.photo_candidate("ERROR: [instagram] abc: There is no video in this post")
+        assert not ytdl.photo_candidate("ERROR: Sign in to confirm your age")
+        gcmd = ytdl.gallery_command("https://x.com/a/status/1", TMP, "firefox")
+        assert gcmd[-1] == "https://x.com/a/status/1" and "--cookies-from-browser" in gcmd
         cmd = ytdl.download_command("https://youtu.be/x", TMP, "720", thumbs.FFMPEG)
         assert "res:720,ext:mp4:m4a" in cmd and cmd[-1] == "https://youtu.be/x" and "--no-playlist" in cmd
         assert ytdl.format_args("720", "video")[:2] == ["-f", "bv/bv*"]
