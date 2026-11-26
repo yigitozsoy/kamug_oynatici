@@ -46,16 +46,7 @@ def _send_to_running(paths, start_ms=None) -> bool:
 
 
 def _bring_to_front(win):
-    if win.isMinimized():
-        win.showNormal()
-    win.show()
-    win.raise_()
-    win.activateWindow()
-    try:
-        hwnd = int(win.winId())
-        ctypes.windll.user32.SetForegroundWindow(hwnd)
-    except Exception:
-        pass
+    win.wake()                  # arka planda gizli bekliyorsa zamanlayıcıları da başlatır
 
 
 def restart(win=None):
@@ -66,6 +57,7 @@ def restart(win=None):
     if win is not None and win.current is not None:
         args.append(win.current.path)
     if win is not None:
+        win._quitting = True        # arka plan modunda bile gerçekten kapansın
         win.close()
     QApplication.instance().quit()
     subprocess.Popen(args, close_fds=True)
@@ -116,7 +108,9 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("kamug")
     app.setOrganizationName("tamga")
-    app.setQuitOnLastWindowClosed(True)
+    # Ana pencerenin closeEvent'i uygulamayı kendisi kapatır; arka plan modunda ana pencere gizliyken
+    # kapanan bir iletişim kutusu uygulamayı bitirmesin.
+    app.setQuitOnLastWindowClosed(False)
     from .theme import install_font_fallbacks
     install_font_fallbacks()                # Japonca, Göktürk, Arapça... dosya adları ve etiketler için
     f = QFont("Segoe UI Variable Text")
@@ -137,10 +131,21 @@ def main():
 
     paths = [a for a in sys.argv[1:] if not a.startswith("--")]
     start_ms = _parse_at(sys.argv[1:])
+    from . import background
+    hidden = background.ARG in sys.argv and not paths
+    if hidden and not background.enabled():      # tercih kapatılmış ama Windows açılış kaydı kalmış
+        background.sync_autostart()
+        return 0
 
     server = None
-    if prefs.get("single_instance", True) and "--new-window" not in sys.argv:
-        if _send_to_running(paths, start_ms):
+    if (prefs.get("single_instance", True) or background.enabled()) and "--new-window" not in sys.argv:
+        if hidden:
+            probe = QLocalSocket()
+            probe.connectToServer(SERVER_NAME)
+            if probe.waitForConnected(300):          # zaten çalışıyor: öne getirmeden çık
+                probe.disconnectFromServer()
+                return 0
+        elif _send_to_running(paths, start_ms):
             return 0
         QLocalServer.removeServer(SERVER_NAME)
         server = QLocalServer()
@@ -151,8 +156,14 @@ def main():
     from . import tamga_sync
     tamga_sync.install(prefs, theme)
     from .window import MainWindow
-    win = MainWindow(paths, start_ms)
-    win.show()
+    win = MainWindow(paths, start_ms, hidden=hidden)
+    if hidden:
+        win.start_hidden()
+    else:
+        win.show()
+    # Oturum kapanırken / bilgisayar kapanırken gizlenmek yerine gerçekten kapan
+    app.commitDataRequest.connect(lambda *_: setattr(win, "_quitting", True))
+    background.sync_autostart()
 
     if server is not None:
         serve(server, win)

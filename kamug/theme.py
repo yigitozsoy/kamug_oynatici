@@ -17,11 +17,34 @@ FALLBACK_FONTS = [
 ]
 
 
+# Yazı türü → yedek yazı tipi. Geri kalanını (emoji, Moğolca, Etiyopya…) Windows'un kendi yedeği doğru buluyor.
+SCRIPT_FALLBACKS = [
+    ("Han", "Yu Gothic UI"), ("Hiragana", "Yu Gothic UI"), ("Katakana", "Yu Gothic UI"), ("Hangul", "Malgun Gothic"),
+    ("Arabic", "Segoe UI"), ("Hebrew", "Segoe UI"), ("Georgian", "Segoe UI"), ("Armenian", "Segoe UI"),
+    ("Devanagari", "Nirmala UI"), ("Bengali", "Nirmala UI"), ("Gurmukhi", "Nirmala UI"), ("Gujarati", "Nirmala UI"),
+    ("Tamil", "Nirmala UI"), ("Telugu", "Nirmala UI"), ("Kannada", "Nirmala UI"), ("Malayalam", "Nirmala UI"),
+    ("Thai", "Leelawadee UI"), ("Lao", "Leelawadee UI"), ("Khmer", "Leelawadee UI"), ("Tibetan", "Microsoft Himalaya"),
+    ("OldTurkic", "Segoe UI Historic"), ("Runic", "Segoe UI Historic"),
+]
+
+
 def install_font_fallbacks(families=()):
-    """Verilen (ve arayüzde kullanılan) yazı tiplerinde eksik harf olursa sırayla yedeklere bakılsın."""
-    from PyQt6.QtGui import QFont
-    for fam in set(families) | {"Segoe UI Variable Text", "Segoe UI Semibold", "Segoe UI Variable Display"}:
-        QFont.insertSubstitutions(fam, [f for f in FALLBACK_FONTS if f != fam])
+    """Arayüz yazı tipinde olmayan harfler için yedekler.
+
+    Yazı türü başına yedek (addApplicationFallbackFontFamily) kullanılır: QFont.insertSubstitutions tek bir yedek
+    için bile ilk yazı çiziminde bütün yazı tiplerini taratıyordu (765 yazı tipli bilgisayarda açılışa 0,4-0,8 sn).
+    Bu yolla tarama yalnızca o harfler ilk kez göründüğünde olur."""
+    from PyQt6.QtGui import QFont, QFontDatabase
+    from PyQt6.QtCore import QChar
+    add = getattr(QFontDatabase, "addApplicationFallbackFontFamily", None)     # Qt 6.8+
+    if add is None:
+        for fam in set(families) | {"Segoe UI Variable Text", "Segoe UI Semibold", "Segoe UI Variable Display"}:
+            QFont.insertSubstitutions(fam, [f for f in FALLBACK_FONTS if f != fam])
+        return
+    for name, fam in SCRIPT_FALLBACKS:
+        script = getattr(QChar.Script, "Script_" + name, None)
+        if script is not None:
+            add(script, fam)
 
 
 ACCENTS = {
@@ -188,7 +211,7 @@ def stylesheet() -> str:
     c = pal()
     return f"""
 * {{
-    font-family: "Segoe UI Variable Text", "Segoe UI", "Roboto", sans-serif;
+    font-family: "Segoe UI Variable Text";
     font-size: 13px;
     outline: none;
 }}

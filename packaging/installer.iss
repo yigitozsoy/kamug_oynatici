@@ -129,6 +129,8 @@ Root: HKA; Subkey: "Software\kamug"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\kamug\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#AppName}"
 Root: HKA; Subkey: "Software\kamug\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "{cm:Desc}"
 Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "kamug"; ValueData: "Software\kamug\Capabilities"; Flags: uninsdeletevalue
+; "Arka planda hazır beklet" açıldıysa uygulama Windows açılış kaydını kendisi yazar; kaldırırken silinsin
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "kamug"; Flags: dontcreatekey uninsdeletevalue
 
 ; Eski ad (gamma) kayıtları kaldırılır; "Birlikte aç" ve Varsayılan uygulamalar'da iki ayrı uygulama görünmesin
 Root: HKA; Subkey: "Software\gamma"; Flags: deletekey

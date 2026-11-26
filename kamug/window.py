@@ -9,6 +9,7 @@ from PyQt6.QtGui import QGuiApplication, QCursor, QImage, QColor
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget, QFileDialog, QMessageBox, QMenu, QApplication, QLabel, QInputDialog)
 
 from . import thumbs
+from . import background
 from . import layout_prefs as lp
 from .config import prefs, positions, sync_store
 from .formats import SUBTITLE_EXT, ext_of, dialog_filter, is_media
@@ -147,7 +148,11 @@ class EdgeResizer(QObject):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, paths=None, start_ms=None):
+    def __init__(self, paths=None, start_ms=None, hidden=False):
+        """hidden: arka planda hazır bekleme için görünmeden başla (kamug.exe --background)."""
+        self._start_hidden = hidden
+        self._hibernating = False      # pencere kapatıldı ama arka planda hazır bekliyor
+        self._quitting = False         # gerçekten kapan (tepsi › Çık, yeniden başlat, oturum kapanışı)
         # VLC'nin yerel video penceresi yüzünden kardeş widget'lar da yerel pencereye dönüşmesin;
         # aksi halde başlık çubuğu ayrı HWND olur ve sürükleme/Snap ana pencereye ulaşmaz.
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings, True)
@@ -218,7 +223,9 @@ class MainWindow(QMainWindow):
         self.engine = None
         self._engine_tried = False
         self._vlc_error = None
-        QTimer.singleShot(0, self._ensure_engine)
+        # Dosyayla açılınca önce dosya gelsin: video/müzik motoru load_item'da zaten kurar, görselde ise
+        # motor (~70 ms, ana iş parçacığı) görsel ekrana geldikten sonra kurulur.
+        QTimer.singleShot(1500 if paths else 0, self._ensure_engine)
 
         self.ui_timer = QTimer(self)
         self.ui_timer.setInterval(30)
@@ -263,6 +270,8 @@ class MainWindow(QMainWindow):
         if prefs.get("pinned", False) and prefs.get("pin_enabled", True):
             QTimer.singleShot(300, lambda: self.set_pinned(True))
         self.show_page(PAGE_HOME)
+        self.tray = background.Tray(self)
+        self.tray.update()
         if paths:
             QTimer.singleShot(60, lambda: self.open_paths(paths, start_ms))
 
@@ -328,7 +337,7 @@ class MainWindow(QMainWindow):
         pa.setContentsMargins(0, 0, 0, 0)
         self.stack = QStackedWidget(self.player_area)
         pa.addWidget(self.stack)
-        self.home = HomeView()
+        self.home = HomeView(self.stack)
         self.home.open_file.connect(self.open_file_dialog)
         self.home.open_folder.connect(self.open_folder_dialog)
         self.home.open_link.connect(lambda: self.open_link_dialog(self._clipboard_link() or ""))
@@ -2509,23 +2518,95 @@ class MainWindow(QMainWindow):
             r = QRect(x, y, w, h)
             if any(s.availableGeometry().intersects(r) for s in QGuiApplication.screens()):
                 self.setGeometry(r)
-                if maxed:
+                if maxed and not self._start_hidden:      # gizli başlangıçta wake() büyütür
                     QTimer.singleShot(0, self.showMaximized)
                 return
         w, h = min(1400, int(scr.width() * 0.8)), min(860, int(scr.height() * 0.82))
         self.setGeometry(scr.x() + (scr.width() - w) // 2, scr.y() + (scr.height() - h) // 2, w, h)
 
-    def closeEvent(self, e):
-        if self._edit_panel is not None and not self._close_image_editor():
-            e.ignore()
-            return
-        self._save_position()
+    def _save_window_geometry(self):
         if not self._pip and not self.isFullScreen():
             g = self.normalGeometry() if self.isMaximized() else self.geometry()
             prefs.set("window_geometry", [g.x(), g.y(), g.width(), g.height(), self.isMaximized()])
         elif self._pip and self._pip_state:
             g = self._pip_state["geometry"]
             prefs.set("window_geometry", [g.x(), g.y(), g.width(), g.height(), self._pip_state["maximized"]])
+
+    # ------------------------------------------------ arka planda hazır bekleme (background.py)
+    _IDLE_TIMERS = ("ui_timer", "sync_timer", "save_timer", "slide_timer")
+
+    def start_hidden(self):
+        """--background: pencereyi ekrana getirmeden bir kez kur (yerel pencere, stil, yazı tipleri) ve bekle."""
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.show()
+        QApplication.processEvents()
+        self.hide()
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
+        self._go_idle()
+
+    def _go_idle(self):
+        for name in self._IDLE_TIMERS:
+            getattr(self, name).stop()
+        self.overlay.hide()
+        self.menu.hide()
+        self._hibernating = True
+
+    def hibernate(self):
+        """Pencere kapatılınca (arka plan modu açıksa): oynatmayı durdur, ana sayfaya dön, gizlen."""
+        if self._edit_panel is not None and not self._close_image_editor():
+            return False
+        if self._pip:
+            self._exit_pip()
+        if self.isFullScreen():
+            self.toggle_fullscreen()
+        self._save_position()
+        self._save_window_geometry()
+        self.go_home()
+        self._image_cache.clear()
+        self._image_order.clear()
+        self._go_idle()
+        self.hide()
+        return True
+
+    def wake(self):
+        """Gizli bekleyen (ya da açık) pencereyi öne getirir."""
+        if self._hibernating:
+            self._hibernating = False
+            for name in ("ui_timer", "sync_timer", "save_timer"):
+                getattr(self, name).start()
+            g = prefs.get("window_geometry")
+            if g and len(g) == 5 and g[4] and not self.isVisible():
+                self.showMaximized()
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        try:
+            ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
+        except Exception:
+            pass
+
+    def quit_app(self):
+        """Arka plan modundan bağımsız olarak tamamen kapan."""
+        self._quitting = True
+        self.close()
+        QApplication.instance().quit()
+
+    def closeEvent(self, e):
+        if not self._quitting and background.enabled():
+            e.ignore()
+            self.hibernate()
+            return
+        if self._edit_panel is not None and not self._close_image_editor():
+            e.ignore()
+            self._quitting = False
+            return
+        self._save_position()
+        if not self._hibernating:
+            self._save_window_geometry()
+        if self.tray.icon is not None:
+            self.tray.icon.hide()
         self.ui_timer.stop()
         self.overlay.hide()
         self.menu.hide()

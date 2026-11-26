@@ -1246,7 +1246,32 @@ def gui_tests(done):
         settle()
         assert not prefs.get("dev_mode") and not con.is_open()
 
-    GL_STEPS = {"3D model çiziliyor (OpenGL)", "3D: ölçü kutusu ve saydam PNG", "3D: 1-9 kısayolları ve kesit"}
+    @step(10, "arka planda hazır bekleme: kapatınca gizlenir, uyanınca dosya açılır, tepsi simgesi")
+    def _():
+        from kamug import background
+        from PyQt6.QtWidgets import QSystemTrayIcon
+        assert not background.enabled()                               # varsayılan kapalı
+        assert background.autostart_command().endswith(background.ARG)
+        prefs.data["background_ready"] = True
+        try:
+            w.tray.update()
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                assert w.tray.icon is not None
+            w.close()                                                 # kapanmaz, gizlenir
+            QApplication.processEvents()
+            assert w._hibernating and not w.isVisible() and w.current is None
+            assert not w.ui_timer.isActive()
+            w.wake()
+            w.open_paths([M("image.png")])
+            QApplication.processEvents()
+            assert w.isVisible() and not w._hibernating and w.ui_timer.isActive()
+            assert w.current is not None and os.path.normcase(w.current.path) == os.path.normcase(M("image.png"))
+        finally:
+            prefs.data["background_ready"] = False
+            w.tray.update()
+        assert w.tray.icon is None
+
+    GL_STEPS ={"3D model çiziliyor (OpenGL)", "3D: ölçü kutusu ve saydam PNG", "3D: 1-9 kısayolları ve kesit"}
 
     def run(i=0):
         if i >= len(steps):

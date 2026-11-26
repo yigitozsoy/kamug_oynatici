@@ -272,6 +272,13 @@ class PreferencesDialog(ThemedDialog):
         lay.addWidget(_row(t("language"), self.cmb_lang, t("language_restart")))
         lay.addWidget(_row(t("single_instance"), self._toggle("single_instance", default=True),
                            t("single_instance_desc")))
+        lay.addWidget(_row(t("background_ready"), self._toggle("background_ready", self._background_changed),
+                           t("background_ready_desc")))
+
+    def _background_changed(self, on):
+        from . import background
+        background.set_autostart(on)
+        self.win.tray.update()
 
     def _page_appearance(self, lay):
         lay.addWidget(_section(t("cat_appearance")))

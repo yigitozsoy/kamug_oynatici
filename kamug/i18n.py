@@ -309,6 +309,13 @@ S = {
     "pip_open_now": ("Şimdi aç", "Open now"),
     "single_instance": ("Tek pencere", "Single window"),
     "single_instance_desc": ("Yeni dosyalar açık olan kamug penceresinde açılır.", "New files open in the running window."),
+    "background_ready": ("Arka planda hazır beklet", "Keep ready in the background"),
+    "background_ready_desc": ("Windows açılınca kamug görünmeden başlar, kapatınca gizlenir; dosyalar anında açılır "
+                              "(~200 MB bellek). Tamamen kapatmak için sistem tepsisindeki simge › Çık.",
+                              "kamug starts hidden with Windows and hides when closed, so files open instantly "
+                              "(~200 MB memory). To quit completely: tray icon › Quit."),
+    "bg_open": ("kamug'u aç", "Open kamug"),
+    "bg_quit": ("Çık", "Quit"),
     "playback": ("Oynatma", "Playback"),
     "autoplay_desc": ("Medya bitince klasördeki sonraki video/müzik başlar.", "Play the next video/song when one ends."),
     "resume": ("Kaldığın yerden devam", "Resume playback"),

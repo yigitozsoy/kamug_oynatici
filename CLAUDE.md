@@ -148,8 +148,18 @@ Bunlar zor bulunmuş şeyler. Değiştirmeden önce nedenini anla.
 - **Tıklama = anında duraklat (YouTube gibi):** overlay tek tıkta beklemeden `video_clicked` yayar; çift tıklamada
   bir kez daha yayıp durumu geri alır. `VLCEngine.toggle()` 0,8 sn içindeki ikinci çağrıda VLC'nin (geç güncellenen)
   durumuna değil önceki hedefin tersine bakar ve yeni durumu döndürür. Bezel animasyonu 340 ms, yalnızca orta bölge çizilir.
-- **Yazı tipi yedekleri:** `theme.install_font_fallbacks()` (app.py) Segoe UI ailesine Yu Gothic UI, Malgun Gothic,
-  Nirmala UI, Segoe UI Historic (Göktürk/Orhun, runik) vb. yedekleri ekler; yoksa Qt Göktürk'ü hiç çizemiyordu.
+- **Yazı tipi yedekleri:** `theme.install_font_fallbacks()` (app.py) yazı türü başına yedek tanımlar
+  (`QFontDatabase.addApplicationFallbackFontFamily`, `SCRIPT_FALLBACKS`: Han/Kana → Yu Gothic UI, Hangul → Malgun Gothic,
+  Hint → Nirmala UI, Göktürk/runik → Segoe UI Historic…); yoksa Qt Göktürk'ü hiç çizemiyordu.
+  **Açılış hızı tuzağı:** `QFont.insertSubstitutions` (tek yedek bile) ve QSS'te birden çok aileli `font-family`
+  listesi ilk yazı çiziminde bütün yazı tiplerini taratıyor (765 yazı tipli bilgisayarda +0,4-0,8 sn). Stil
+  sayfasında tek aile yaz. Ebeveyni olmayan widget'ı `setVisible(False)` yapma (ayrı üst pencere kurulur, ~0,5 sn);
+  önce düzene ekle. Görselle açılışta VLC motoru 1,5 sn sonra kurulur (video/müzik `load_item`'da kendisi kurar).
+- **Arka planda hazır bekleme (`background.py`, `background_ready`, varsayılan kapalı):** açıkken HKCU Run
+  `kamug = "kamug.exe" --background` yazılır; o açılışta pencere `start_hidden()` ile ekrana gelmeden kurulur.
+  Pencereyi kapatmak `hibernate()` (ana sayfa, zamanlayıcılar durur, gizlenir); tek örnek sunucusu dosya gelince
+  `wake()`. Tamamen kapanış: tepsi simgesi › Çık (`quit_app`), `restart()` ve oturum kapanışı `_quitting` kurar.
+  `setQuitOnLastWindowClosed(False)`: closeEvent uygulamayı kendisi bitirir. Ölçüm: arka plandan görsel ~50-160 ms.
   VLC altyazısı ve ffmpeg gömmesi kendi yedeklerini zaten buluyor. UTF-8 olmayan harici altyazı gömülürken
   `charenc` eklenir (`VideoEditorDialog._sub_charenc`).
 - **VLC motoru tembel:** açılışı hızlandırmak için `_ensure_engine()` ile ilk event döngüsünde ya da ilk

@@ -55,6 +55,7 @@ DEFAULTS = {
     "slideshow_seconds": 4,
     "hw_decode": True,
     "single_instance": True,
+    "background_ready": False,  # Windows açılışında gizli başla, kapatınca gizlen (background.py)
     "sub_size": 100,            # %
     "sub_color": "#ffffff",
     "sub_bg": 0,                # 0..255 arka plan opaklığı

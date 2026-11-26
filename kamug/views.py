@@ -55,7 +55,6 @@ class HomeView(QWidget):
         b2.clicked.connect(self.open_folder.emit)
         self.btn_link = Pill("  " + t("yt_open_link"), "link")
         self.btn_link.clicked.connect(self.open_link.emit)
-        self.btn_link.setVisible(bool(prefs.get("yt_enabled", False)))
         btns.addWidget(b1)
         btns.addWidget(b2)
         btns.addWidget(self.btn_link)
@@ -63,6 +62,9 @@ class HomeView(QWidget):
         col.addSpacing(10)
         col.addLayout(btns)
         outer.addLayout(col)
+        # Ebeveyni olmayan düğmeyi gizlemek onu ayrı bir üst pencere olarak kurduruyordu (açılışa ~0,5 sn);
+        # düzene (dolayısıyla bu widget'a) eklendikten sonra gizle.
+        self.btn_link.setVisible(bool(prefs.get("yt_enabled", False)))
         outer.addSpacing(26)
 
         self.recent_title = QLabel(t("recent"))
