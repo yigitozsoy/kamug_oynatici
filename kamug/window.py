@@ -25,6 +25,18 @@ from .views import HomeView, AudioView, InfoBar
 from . import vlc_engine
 from .vlc_engine import VLCEngine
 
+
+def _url_image(url):
+    """İnternetteki küçük resmi (akışın kapak görseli) indirir → QImage. İş parçacığında çağrılır."""
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "kamug"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        data = r.read(8_000_000)
+    img = QImage()
+    img.loadFromData(data)
+    return img
+
+
 user32 = ctypes.windll.user32
 user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                 ctypes.c_int, wintypes.UINT]
@@ -215,6 +227,9 @@ class MainWindow(QMainWindow):
         # VLC motoru pencere ekrana geldikten hemen sonra (veya ilk video/müzikte) başlatılır;
         # böylece açılış ve görsel görüntüleme beklemez.
         self._series = None          # açık bölümün dizisi (series.Series) ya da None
+        self._stream_want = None     # indirmeden izle: en son istenen link (bekleyen)
+        self._resolving = {}         # link → yt-dlp işi (adresler alınıyor)
+        self._stream_cache = {}      # link → (zaman, bilgi): önceden alınmış adresler
         self._movie = None           # açık video bir film adı taşıyorsa (series.Parsed)
         self._intro = None           # açık bölümün intro aralığı (ms, ms)
         self._intro_autoskipped = False
@@ -854,11 +869,18 @@ class MainWindow(QMainWindow):
                 if pos:
                     start_ms = pos
                     QTimer.singleShot(700, lambda p=pos: self.osd(t("resumed_at", time=fmt_time(p))))
-            self.engine.load(item.path, self._media_options(), start_ms or 0)
+            self._engine_load(item, start_ms or 0)
             self._vt = (start_ms or 0, time.perf_counter())
             self.overlay.set_time(start_ms or 0, max(0, item.duration))
             self.show_page(PAGE_VIDEO if item.is_video else PAGE_AUDIO)
-            if item.is_audio:
+            if item.is_audio and item.is_stream:
+                self.audio_view.clear_meta()
+                self.audio_view.set_info(item.title)
+                self.audio_view.set_cover(QImage())
+                if item.thumb_url:
+                    thumbs.run_async(_url_image, item.thumb_url,
+                                     on_done=lambda img, p=item.path: self._on_cover(p, img))
+            elif item.is_audio:
                 self.audio_view.clear_meta()
                 self.audio_view.set_info(item.title)
                 self.audio_view.set_cover(QImage())
@@ -872,7 +894,7 @@ class MainWindow(QMainWindow):
             self.overlay.set_cc(False)
             if item.is_video:   # görüntüsü olmayan video uzantılı dosya (ör. yalnızca ses içeren mp4)?
                 QTimer.singleShot(1200, lambda p=item.path: self._check_audio_only(p))
-            self._setup_series(item)
+            self._setup_series(None if item.is_stream else item)
         elif item.is_model:
             self._setup_series(None)
             self._stop_slideshow()
@@ -890,11 +912,17 @@ class MainWindow(QMainWindow):
             self._load_image(item)
         if self._tr_panel is not None:
             self._tr_panel.set_item(item)
-            if not item.is_playable and self.right.currentWidget() is self._tr_panel:
+            if (not item.is_playable or item.is_stream) and self.right.currentWidget() is self._tr_panel:
                 self.close_transcript()
         self._update_counter()
         self._update_edge_arrows()
         self._apply_layout()
+
+    def _engine_load(self, item, start_ms):
+        if item.is_stream:       # internetten: tarayıcı kimliği + ayrı ses akışı seçenekleriyle
+            self.engine.load(item.stream, item.options + self._media_options(), start_ms)
+        else:
+            self.engine.load(item.path, self._media_options(), start_ms)
 
     def _media_options(self):
         opts = []
@@ -1332,6 +1360,8 @@ class MainWindow(QMainWindow):
                 self.info.set_details(self.current)
 
     def _on_error(self):
+        if self._restream():
+            return
         self.osd(t("cannot_play"))
         self.overlay.set_playing(False)
 
@@ -1604,7 +1634,7 @@ class MainWindow(QMainWindow):
         self.osd(t("intro_saved", a=fmt_time(a), b=fmt_time(b)))
 
     def open_series_dialog(self):
-        if not self.current or not self.current.is_video:
+        if not self.current or not self.current.is_video or self.current.is_stream:
             return
         from .series_dialog import SeriesDialog
         SeriesDialog(self, self.current).exec()
@@ -1665,7 +1695,7 @@ class MainWindow(QMainWindow):
             self._hover_bucket = None
             self.overlay.set_preview_image(None)
             return
-        if ms < 0 or not self.current or not self.current.is_video or not self.engine:
+        if ms < 0 or not self.current or not self.current.is_video or self.current.is_stream or not self.engine:
             self._hover_bucket = None
             return
         length = self.engine.get_length() or self.current.duration
@@ -1753,7 +1783,8 @@ class MainWindow(QMainWindow):
         if not self.engine or not self.current or not self.current.is_video:
             return
         pat = " ".join("*" + e for e in sorted(SUBTITLE_EXT))
-        f, _ = QFileDialog.getOpenFileName(self, t("add_subtitle"), os.path.dirname(self.current.path),
+        start = "" if self.current.is_stream else os.path.dirname(self.current.path)
+        f, _ = QFileDialog.getOpenFileName(self, t("add_subtitle"), start,
                                            f"{t('subtitle_files')} ({pat});;{t('all_files')} (*.*)")
         if f:
             if self.engine.add_subtitle(f):
@@ -1823,7 +1854,7 @@ class MainWindow(QMainWindow):
         self._rotation = deg
         t_ = self.engine.get_time()
         playing = self.engine.is_playing()
-        self.engine.load(self.current.path, self._media_options(), t_)
+        self._engine_load(self.current, t_)
         self.engine.play()
         if not playing:
             self.engine._pause_after_start = True
@@ -1838,7 +1869,11 @@ class MainWindow(QMainWindow):
         except OSError:
             d = os.path.dirname(self.current.path)
         ms = self.engine.get_time()
-        name = f"{self.current.title}_{fmt_time(ms).replace(':', '-')}.{ms % 1000:03d}.png"
+        title = self.current.title
+        if self.current.is_stream:
+            from .ytdl import safe_name
+            title = safe_name(title)
+        name = f"{title}_{fmt_time(ms).replace(':', '-')}.{ms % 1000:03d}.png"
         path = os.path.join(d, name)
         # VLC kareyi videonun orijinal çözünürlüğünde, kayıpsız PNG olarak yazar
         if self.engine.snapshot(path):
@@ -2079,11 +2114,16 @@ class MainWindow(QMainWindow):
                 m.addAction(t("snapshot"), self.take_snapshot)
                 m.addAction(t("add_subtitle") + "…", self.add_subtitle_dialog)
             m.addAction(t("ab_loop"), self.set_ab_point)
-            m.addAction(t("act_edit") + "…", self.edit_current)
+            if not self.current.is_stream:
+                m.addAction(t("act_edit") + "…", self.edit_current)
             m.addSeparator()
-        m.addAction(t("act_info"), self.show_info)
-        m.addAction(t("act_reveal"), lambda: self.reveal(self.current))
-        m.addAction(t("copy_path"), lambda: QApplication.clipboard().setText(self.current.path))
+        if self.current.is_stream:      # indirmeden izlenen video: dosya işlemleri yok
+            m.addAction(t("act_download") + "…", lambda: self.open_link_dialog(self.current.path))
+            m.addAction(t("copy_link"), lambda: QApplication.clipboard().setText(self.current.path))
+        else:
+            m.addAction(t("act_info"), self.show_info)
+            m.addAction(t("act_reveal"), lambda: self.reveal(self.current))
+            m.addAction(t("copy_path"), lambda: QApplication.clipboard().setText(self.current.path))
         m.addSeparator()
         if prefs.get("pip_enabled", True):
             m.addAction(t("pip_exit") if self._pip else t("pip_tip"), self.toggle_pip)
@@ -2180,6 +2220,8 @@ class MainWindow(QMainWindow):
             self.add_subtitle_dialog()
         elif key == "reveal":
             self.reveal(self.current)
+        elif key == "download" and self.current is not None and self.current.is_stream:
+            self.open_link_dialog(self.current.path)
         elif key == "info":
             self.show_info()
         elif key == "delete" and self.current is not None:
@@ -2192,12 +2234,14 @@ class MainWindow(QMainWindow):
 
     # ================================================================== dosya işlemleri
     def reveal(self, item):
-        if not item:
+        if not item or item.is_stream:
             return
         import subprocess
         subprocess.Popen(["explorer", "/select,", os.path.normpath(item.path)])
 
     def rename_item(self, item):
+        if item is None or item.is_stream:
+            return
         new, ok = QInputDialog.getText(self, t("rename"), t("new_name"), text=item.name)
         if not ok or not new or new == item.name:
             return
@@ -2224,6 +2268,8 @@ class MainWindow(QMainWindow):
             self.load_item(new_item, start_ms=pos if playing else None)
 
     def trash_item(self, item):
+        if item is None or item.is_stream:
+            return
         if lp.get("confirm_delete"):
             r = QMessageBox.question(self, t("move_to_trash"), t("confirm_trash", name=item.name))
             if r != QMessageBox.StandardButton.Yes:
@@ -2251,7 +2297,7 @@ class MainWindow(QMainWindow):
 
     def show_info(self, item=None):
         item = item or self.current
-        if not item:
+        if not item or item.is_stream:
             return
         from .dialogs import MediaInfoDialog
         MediaInfoDialog(item, self).exec()
@@ -2276,7 +2322,7 @@ class MainWindow(QMainWindow):
         self.edit_item(self.current)
 
     def edit_item(self, item):
-        if item is None or item.is_model:
+        if item is None or item.is_model or item.is_stream:
             return
         if item.is_image:
             if item is not self.current:
@@ -2330,6 +2376,8 @@ class MainWindow(QMainWindow):
         sm.addAction(t("other_formats") + "…", lambda: self.convert_item(item))
 
     def quick_convert(self, item, ext):
+        if item.is_stream:
+            return
         from . import image_io
         target = os.path.splitext(item.path)[0] + ext
         if os.path.exists(target):
@@ -2355,6 +2403,8 @@ class MainWindow(QMainWindow):
         thumbs.run_async(work, on_done=done, on_fail=lambda m: QMessageBox.warning(self, t("convert_title"), t("save_failed") + "\n" + m))
 
     def convert_item(self, item):
+        if item.is_stream:
+            return
         from .dialogs import ConvertDialog
 
         def done(p):
@@ -2369,7 +2419,7 @@ class MainWindow(QMainWindow):
         if self._tr_panel is not None and self.right.currentWidget() is self._tr_panel and self.right.isVisible():
             self.close_transcript()
             return
-        if self.current is None or not self.current.is_playable or self._pip:
+        if self.current is None or not self.current.is_playable or self.current.is_stream or self._pip:
             return
         if self._edit_panel is not None:
             return
@@ -2471,7 +2521,7 @@ class MainWindow(QMainWindow):
             from . import ytdl
             url = next((ytdl.find_url(u.toString()) for u in e.mimeData().urls() if ytdl.find_url(u.toString())), None)
             if url:
-                self.open_link_dialog(url)
+                self.open_link(url)
 
     # ================================================================== linkten indir
     def _clipboard_link(self):
@@ -2485,12 +2535,143 @@ class MainWindow(QMainWindow):
         url = self._clipboard_link()
         if not url:
             return False
-        self.open_link_dialog(url)
+        self.open_link(url)
         return True
 
     def open_link_dialog(self, url=""):
         from .ytdl_dialog import DownloadDialog
         DownloadDialog(self, url).exec()
+
+    def open_link(self, url):
+        """Ctrl+V / sürükleme: tercihe göre indirme penceresi ya da doğrudan izle."""
+        from . import ytdl
+        if prefs.get("yt_link_action", "ask") == "stream" and ytdl.installed() and not ytdl.playlist_only(url) \
+                and not ytdl.photo_first(url):
+            self.play_stream(url)
+        else:
+            self.open_link_dialog(url)
+
+    # ================================================================== indirmeden izle
+    def play_stream(self, url, start_ms=None, cookies=None, retry=False):
+        """Linki indirmeden oynat: yt-dlp doğrudan adresleri verir (~5 sn; indirme penceresi açıkken önceden
+        alınmış olabilir), VLC internetten akıtır. Araç yoksa indirme penceresi açılır (ilk kurulum orada)."""
+        from . import ytdl
+        if not ytdl.installed():
+            self.open_link_dialog(url)
+            return
+        token = object()
+        self._stream_want = token          # en son istenen link kazanır
+
+        def then(info, err):
+            if self._stream_want is not token:
+                return
+            self._stream_want = None
+            if info is None:
+                key = ytdl.error_hint(err)
+                hint = t(key) if key else ytdl.last_error(err)[:160]
+                self.osd(t("stream_failed") + (f": {hint}" if hint else ""))
+                return
+            self._start_stream(info, start_ms, retry)
+
+        if retry:
+            self._stream_cache.pop(url, None)
+        else:
+            info = self._cached_stream(url)
+            if info is not None:
+                then(info, "")
+                return
+        self.osd(t("stream_opening"))
+        if ytdl.needs_update_check() and url not in self._resolving:
+            # YouTube sık değişiyor: araç günde bir kez güncellenir (eski sürüm adresleri çözemiyordu)
+            from PyQt6.QtCore import QProcess
+            up = QProcess(self)
+            up.finished.connect(lambda *_a: (ytdl.mark_checked(), self._resolve_stream(url, cookies, then)))
+            up.errorOccurred.connect(lambda e: e == QProcess.ProcessError.FailedToStart and
+                                     (ytdl.mark_checked(), self._resolve_stream(url, cookies, then)))
+            cmd = ytdl.update_command()
+            up.start(cmd[0], cmd[1:])
+        else:
+            self._resolve_stream(url, cookies, then)
+
+    def prefetch_stream(self, url, cookies=None):
+        """İndirme penceresine link gelince adresleri arka planda al: "İndirmeden izle"ye basınca beklemeden açılsın."""
+        from . import ytdl
+        if not url or not ytdl.installed() or ytdl.needs_update_check() or ytdl.playlist_only(url)                 or ytdl.photo_first(url) or self._cached_stream(url) is not None:
+            return
+        self._resolve_stream(url, cookies)
+
+    def _cached_stream(self, url):
+        c = self._stream_cache.get(url)
+        if c and time.time() - c[0] < 3600:     # YouTube adresleri ~6 saat geçerli
+            return c[1]
+        return None
+
+    def _resolve_stream(self, url, cookies=None, then=None):
+        """yt-dlp ile doğrudan adresleri al. Aynı link zaten alınıyorsa ona bağlanır. then(info | None, hata)."""
+        from . import ytdl
+        from PyQt6.QtCore import QProcess, QProcessEnvironment
+        job = self._resolving.get(url)
+        if job is not None:
+            if then is not None:
+                job["then"] = then
+            return
+        if cookies is None:
+            cookies = prefs.get("yt_cookies", "") or ""
+        proc = QProcess(self)
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONIOENCODING", "utf-8")
+        proc.setProcessEnvironment(env)
+        job = {"proc": proc, "out": bytearray(), "err": bytearray(), "then": then}
+        self._resolving[url] = job
+
+        def done(*_a):
+            if self._resolving.get(url) is not job:
+                return
+            del self._resolving[url]
+            job["out"] += bytes(proc.readAllStandardOutput())
+            job["err"] += bytes(proc.readAllStandardError())
+            info = ytdl.parse_stream(bytes(job["out"]).decode("utf-8", "replace"), url)
+            if info is not None:
+                self._stream_cache[url] = (time.time(), info)
+            cb = job["then"]
+            if cb is not None:
+                cb(info, bytes(job["err"]).decode("utf-8", "replace"))
+            proc.deleteLater()
+
+        proc.readyReadStandardOutput.connect(lambda: job["out"].extend(bytes(proc.readAllStandardOutput())))
+        proc.readyReadStandardError.connect(lambda: job["err"].extend(bytes(proc.readAllStandardError())))
+        proc.finished.connect(done)
+        proc.errorOccurred.connect(lambda e: e == QProcess.ProcessError.FailedToStart and done())
+        cmd = ytdl.stream_command(url, prefs.get("yt_stream_quality", "1080"), cookies)
+        proc.start(cmd[0], cmd[1:])
+
+    def _start_stream(self, info, start_ms=None, retry=False):
+        from . import ytdl
+        from .library import StreamItem
+        if self._edit_panel is not None and not self._close_image_editor():
+            return
+        item = StreamItem(info, ytdl.vlc_options(info))
+        item.retried = retry          # adres yenilemesi bir kez denenir
+        self.lib.open_stream(item)
+        try:
+            if self.watcher.directories():
+                self.watcher.removePaths(self.watcher.directories())
+        except Exception:
+            pass
+        self._sidebar_visible = False
+        self.sidebar.set_counts(self.lib.counts())
+        self.sidebar.set_items([], item)
+        self.load_item(item, start_ms)
+
+    def _restream(self):
+        """Akış adresinin süresi dolmuş olabilir (YouTube ~6 saat): bir kez yeniden çöz, aynı yerden sürdür."""
+        cur = self.current
+        if cur is None or not cur.is_stream or cur.retried or cur.live:
+            return False
+        pos = self.engine.get_time() if self.engine else 0
+        cur.retried = True
+        self.play_stream(cur.path, start_ms=max(0, pos), retry=True)
+        return True
 
     # ================================================================== klavye
     def keyPressEvent(self, e):

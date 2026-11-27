@@ -48,6 +48,36 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# kamug-export: pencere açmadan dışa aktaran konsol programı (kamug/export.py). Aynı _internal klasörünü kullanır.
+b = Analysis(
+    [os.path.join(ROOT, "packaging", "export_entry.py")],
+    pathex=[ROOT],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=EXCLUDES,
+    noarchive=False,
+    optimize=1,
+)
+pyz_b = PYZ(b.pure)
+exe_b = EXE(
+    pyz_b,
+    b.scripts,
+    [],
+    exclude_binaries=True,
+    name="kamug-export",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    version=os.path.join(SPECPATH, "version_info.txt"),
+    icon=[os.path.join(ROOT, "kamug", "assets", "logo.ico")],
+)
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -63,4 +93,4 @@ exe = EXE(
     version=os.path.join(SPECPATH, "version_info.txt"),
     icon=[os.path.join(ROOT, "kamug", "assets", "logo.ico")],
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="kamug")
+coll = COLLECT(exe, a.binaries, a.datas, exe_b, b.binaries, b.datas, strip=False, upx=False, name="kamug")

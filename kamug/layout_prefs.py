@@ -18,7 +18,8 @@ GROUPS = {
                 ["theater", 1], ["fullscreen", 1]],
                ("play",)),
     "infobar": ("info_layout",
-                [["series", 1], ["transcript", 1], ["edit", 1], ["snapshot", 1], ["subtitle", 1], ["reveal", 1], ["info", 1], ["delete", 1], ["more", 1]],
+                [["series", 1], ["transcript", 1], ["edit", 1], ["snapshot", 1], ["subtitle", 1], ["download", 1], ["reveal", 1], ["info", 1], ["delete", 1],
+                 ["more", 1]],
                 ()),
 }
 
@@ -87,9 +88,12 @@ def layout(group):
         if k in known and k not in seen:
             out.append([k, 1 if k in required or k == SEP else v])
             seen.add(k)
-    for k, v in default:
-        if k not in seen:
-            out.append([k, v])
+    for i, (k, v) in enumerate(default):
+        if k not in seen:       # yeni eklenen düğme: varsayılandaki komşusunun yanına
+            prev = default[i - 1][0] if i else None
+            pos = next((j + 1 for j, e in enumerate(out) if e[0] == prev), len(out))
+            out.insert(pos, [k, v])
+            seen.add(k)
     return out
 
 

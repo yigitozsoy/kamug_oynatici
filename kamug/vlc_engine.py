@@ -229,7 +229,8 @@ class VLCEngine(QObject):
     def load(self, path: str, options=None, start_ms: int = 0):
         self.path = path
         self.media_options = list(options or [])
-        media = self.instance.media_new_path(path)
+        # İnternetten akış (indirmeden izle): adres; diğerleri dosya yolu
+        media = self.instance.media_new_location(path) if "://" in path else self.instance.media_new_path(path)
         for o in self.media_options:
             media.add_option(o)
         if start_ms and start_ms > 0:

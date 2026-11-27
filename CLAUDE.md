@@ -114,6 +114,13 @@ kamug/
 " + JSON, app.serve cevabı geri yazar). Geliştirici konsolu: Esc'nin
                         altındaki tuş (tarama kodu 41, TR-Q "): Shift+" prefs dev_mode, mod açıkken " konsolu açar/kapatır.
                         Panel başlık çubuğunun altına düzene girer, içeriği iter (VLC'nin yerel penceresi üstüne binmez).
+  export.py             kamug-export: YouTube videosu/listesi → meta.json, transcript.txt, frames/, ocr.json (pencere
+                        açmaz; kurulumda ayrı konsol exe'si kamug-export.exe, packaging/export_entry.py; "cli" görevi
+                        kurulum klasörünü kullanıcı PATH'ine ekler). Transkript: elle altyazı → YouTube otomatik
+                        altyazısı (yalnızca "-orig"/videonun dili; json3, bilgideki adresten doğrudan, olmazsa yt-dlp)
+                        → Whisper. Kareler: screen_text.scan_changes + küçük gri kare benzerliğiyle tekrar eleme.
+                        Kaynaktan: python -m kamug.export <link> --out <klasör>. Deneme betiğinde LOCALAPPDATA'yı
+                        Python başlamadan değiştirme (Python install manager kütüphaneleri oradan okuyor).
   shortcuts.py · formats.py · shell.py (sağ tık menüsü kaydı) · widgets.py (ToggleSwitch vb.)
   assets/               logo.png (beyaz Γ, arayüzde renklendirilir), logo.ico
 tests/smoke_test.py     uçtan uca test (çekirdek + gerçek arayüz)
@@ -216,7 +223,16 @@ Bunlar zor bulunmuş şeyler. Değiştirmeden önce nedenini anla.
   **Fotoğraflar:** yt-dlp video bulamazsa (`photo_candidate`) ya da link doğrudan fotoğrafsa (`photo_first`: TikTok
   /photo/, Pinterest, Reddit galerisi/i.redd.it, Imgur…) gallery-dl (`tools\gallery-dl.exe`, ilk gerekince iner,
   günde bir `--update`) gönderideki tüm dosyaları indirir; yollar `output.mode=pipe` satırlarından, olmazsa klasör
-  taramasıyla. Gerçek sitelerle denenmedi (araç indirip çalıştırmak bu oturumda izinli değildi). Basılı tutunca hızlanma: `hold_rate` (1.5–4x), `hold_area` (anywhere | right).
+  taramasıyla. Gerçek sitelerle denenmedi (araç indirip çalıştırmak bu oturumda izinli değildi).
+  **İndirmeden izle:** `ytdl.stream_command` (-j) → `parse_stream` → `library.StreamItem` (path = sayfa linki,
+  stream = VLC adresi, options = `:http-user-agent`, ayrı ses `:input-slave`); `vlc_engine.load` "://" görünce
+  `media_new_location`. Ses stereo m4a seçilir (YouTube 5.1 sesi VLC açılışını ~5 sn geciktiriyor), aynı çözünürlükte
+  H.264 önce. yt-dlp kendisi ~5 sn (tek dosyalık exe'nin açılışı ~2 sn); indirme penceresi link gelince
+  `window.prefetch_stream` ile önceden alır (1 saat önbellek) → "İndirmeden izle" ~1,5 sn. Ctrl+V/sürükleme
+  `yt_link_action` (ask | stream, varsayılan ask), kalite `yt_stream_quality` (1080). Akışta dosya işlemleri
+  (sil, klasörde göster, düzenle, bilgi, dizi, transkript) kapalı, bilgi çubuğunda "İndir" (`download`). VLC hatası
+  → `_restream` bir kez adresi yeniler, kaldığı yerden sürer. Eski yt-dlp YouTube'un JS denetimini çözemiyor:
+  günlük `-U` şart (play_stream de yapar). Basılı tutunca hızlanma: `hold_rate` (1.5–4x), `hold_area` (anywhere | right).
 - **Transkript ve OCR (transcript.py, screen_text.py, transcript_panel.py, yazit_export.py; varsayılan kapalı,
   `transcript_enabled`):** bilgi çubuğunda "Transkript" düğmesi → sağ panelde (`self.right`, `_tr_panel`) sekmeler
   Konuşma | Ekrandaki yazılar, satıra tıklayınca o ana gider, `_tick` → `set_time`. Konuşma: whisper.cpp **b5907 CPU**

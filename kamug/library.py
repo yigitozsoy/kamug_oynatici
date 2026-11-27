@@ -60,10 +60,41 @@ class MediaItem:
     def is_playable(self):
         return self.kind in (KIND_VIDEO, KIND_AUDIO)
 
+    @property
+    def is_stream(self):
+        return False
+
     def date_str(self):
         if not self.mtime:
             return ""
         return datetime.fromtimestamp(self.mtime).strftime("%d.%m.%Y")
+
+
+class StreamItem(MediaItem):
+    """İndirmeden, internetten oynatılan video (yt-dlp'nin verdiği doğrudan adres).
+    path = sayfanın linki (konum kaydı, "yolu kopyala" bunu kullanır); stream = VLC'nin açacağı adres."""
+    __slots__ = ("stream", "options", "thumb_url", "live", "retried")
+
+    def __init__(self, info, options=()):
+        self.path = info["page"]
+        self.title = info.get("title") or info["page"]
+        self.name = self.title
+        self.ext = ""
+        self.kind = KIND_VIDEO if info.get("video", True) else KIND_AUDIO
+        self.size = 0
+        self.mtime = 0.0
+        self.duration = info.get("duration_ms", -1) or -1
+        self.width = info.get("width", 0) or 0
+        self.height = info.get("height", 0) or 0
+        self.stream = info["url"]
+        self.options = list(options)
+        self.thumb_url = info.get("thumb", "")
+        self.live = bool(info.get("live"))
+        self.retried = False
+
+    @property
+    def is_stream(self):
+        return True
 
 
 def human_size(n: int) -> str:
@@ -147,6 +178,14 @@ class Library:
             cur = self.items[0]
         self.current = cur
         return cur
+
+    def open_stream(self, item):
+        """İndirmeden izlenen video: klasör listesi boşalır (yan panelde bir şey yok), açık öğe akış olur."""
+        self.folder = None
+        self.all_items = []
+        self._rebuild()
+        self.current = item
+        return item
 
     def refresh(self):
         """Klasördeki değişiklikleri (yeni kesilen video vb.) yeniden okur."""

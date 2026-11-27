@@ -634,7 +634,7 @@ class TranscriptPanel(QWidget):
 
     def set_item(self, item):
         """Açık dosya değişti. Panel görünür değilse anahtar hesaplanmaz (dosya okunmasın)."""
-        if item is not None and not item.is_playable:
+        if item is not None and (not item.is_playable or item.is_stream):
             item = None
         same = item is not None and self.item is not None and os.path.normcase(item.path) == \
             os.path.normcase(self.item.path)

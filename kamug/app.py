@@ -4,12 +4,15 @@ import os
 import subprocess
 import sys
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QFont
-from PyQt6.QtNetwork import QLocalServer, QLocalSocket
-from PyQt6.QtWidgets import QApplication
+from . import startup_log
+startup_log.start()             # açılış süresi kaydı (startup.log): Qt yüklenmeden önceki an
 
-from .config import prefs, asset, BASE_DIR
+from PyQt6.QtCore import Qt, QTimer  # noqa: E402
+from PyQt6.QtGui import QIcon, QFont  # noqa: E402
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket  # noqa: E402
+from PyQt6.QtWidgets import QApplication  # noqa: E402
+
+from .config import prefs, asset, BASE_DIR  # noqa: E402
 
 SERVER_NAME = "kamug-single-instance-v1"
 
@@ -105,7 +108,9 @@ def main():
             pass
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings, True)
+    startup_log.mark("qt")
     app = QApplication(sys.argv)
+    startup_log.mark("app")
     app.setApplicationName("kamug")
     app.setOrganizationName("tamga")
     # Ana pencerenin closeEvent'i uygulamayı kendisi kapatır; arka plan modunda ana pencere gizliyken
@@ -116,6 +121,7 @@ def main():
     f = QFont("Segoe UI Variable Text")
     f.setPointSizeF(9.5)
     app.setFont(f)
+    startup_log.mark("fonts")
     ico = asset("logo.ico") if os.path.exists(asset("logo.ico")) else asset("logo.png")
     app.setWindowIcon(QIcon(ico))
 
@@ -151,16 +157,22 @@ def main():
         server = QLocalServer()
         server.listen(SERVER_NAME)
 
+    startup_log.mark("single")
     from .theme import theme
     theme.apply()
+    startup_log.mark("theme")
     from . import tamga_sync
     tamga_sync.install(prefs, theme)
     from .window import MainWindow
+    startup_log.mark("import")
     win = MainWindow(paths, start_ms, hidden=hidden)
+    startup_log.mark("window")
     if hidden:
         win.start_hidden()
     else:
         win.show()
+        kind = os.path.splitext(paths[0])[1].lower().lstrip(".") if paths else "home"
+        QTimer.singleShot(0, lambda: startup_log.finish(kind or "folder"))   # ilk çizimden sonra
     # Oturum kapanırken / bilgisayar kapanırken gizlenmek yerine gerçekten kapan
     app.commitDataRequest.connect(lambda *_: setattr(win, "_quitting", True))
     background.sync_autostart()

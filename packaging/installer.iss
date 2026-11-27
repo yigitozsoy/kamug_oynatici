@@ -19,6 +19,8 @@ UsePreviousAppDir=no
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
+; kamug-export komutu için PATH değişince açık pencerelere haber verilsin
+ChangesEnvironment=yes
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -76,6 +78,8 @@ turkish.StepGroup=Ek bileşenler:
 english.StepGroup=Optional components:
 turkish.TaskStep=STEP / IGES desteği: CAD dosyalarını aç (yaklaşık 85 MB)
 english.TaskStep=STEP / IGES support: open CAD files (about 85 MB)
+turkish.TaskCli=Komut satırı: kamug-export komutunu her yerden çalıştır (PATH'e ekler)
+english.TaskCli=Command line: run the kamug-export command from anywhere (adds to PATH)
 turkish.AssocNeedsStep=STEP / IGES desteği ile
 english.AssocNeedsStep=with STEP / IGES support
 turkish.AssocTitle=Dosya türleri
@@ -102,6 +106,7 @@ english.RunDefaults=Open default app settings (press "Set default" for the selec
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "contextmenu"; Description: "{cm:TaskContext}"; GroupDescription: "{cm:ShellGroup}"
 Name: "step"; Description: "{cm:TaskStep}"; GroupDescription: "{cm:StepGroup}"
+Name: "cli"; Description: "{cm:TaskCli}"; GroupDescription: "{cm:StepGroup}"
 
 [Files]
 Source: "..\build\dist\kamug\*"; DestDir: "{app}"; Excludes: "\step\*"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -109,6 +114,8 @@ Source: "..\build\dist\kamug\*"; DestDir: "{app}"; Excludes: "\step\*"; Flags: i
 Source: "..\build\dist\kamug\step\*"; DestDir: "{app}\step"; Tasks: step; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 [InstallDelete]
+; Önceki sürümün Python/Qt dosyaları: üstüne kurunca eskileri kalıyordu (python313 + python314, iki numpy...)
+Type: filesandordirs; Name: "{app}\_internal"
 ; Güncellemede STEP desteğinden vazgeçildiyse eski motoru kaldır
 Type: filesandordirs; Name: "{app}\step"; Tasks: not step
 ; Eski ad (gamma): Başlat menüsü klasörü ve masaüstü kısayolu (yenileri kamug adıyla oluşur)
@@ -284,16 +291,53 @@ begin
     Log('Eski klasör tamamen silinemedi: ' + OldAppDir);
 end;
 
+// ---------------------------------------------------------------- kamug-export: kullanıcı PATH'i
+// Kurulum klasörü kullanıcının PATH'ine eklenir (görev seçiliyse), seçilmezse ya da kaldırılınca çıkarılır.
+function PathHas(const Path, Dir: String): Boolean;
+begin
+  Result := Pos(';' + Uppercase(Dir) + ';', ';' + Uppercase(Path) + ';') > 0;
+end;
+
+procedure SetUserPath(Add: Boolean);
+var
+  Path, Dir: String;
+  P: Integer;
+begin
+  Dir := ExpandConstant('{app}');
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', Path) then
+    Path := '';
+  if Add then
+  begin
+    if PathHas(Path, Dir) then Exit;
+    if (Path <> '') and (Copy(Path, Length(Path), 1) <> ';') then
+      Path := Path + ';';
+    Path := Path + Dir;
+  end else
+  begin
+    if not PathHas(Path, Dir) then Exit;
+    Path := ';' + Path + ';';
+    P := Pos(';' + Uppercase(Dir) + ';', Uppercase(Path));
+    Delete(Path, P, Length(Dir) + 1);
+    Path := Copy(Path, 2, Length(Path) - 2);
+  end;
+  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', Path);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
     MoveAsideThumbDll;
   if CurStep = ssPostInstall then
+  begin
     RemoveOldAppDir;
+    SetUserPath(WizardIsTaskSelected('cli'));
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    SetUserPath(False);
   if CurUninstallStep = usPostUninstall then
     DeleteOldThumbDlls;
 end;

@@ -32,6 +32,9 @@ classifiers = [
 [project.gui-scripts]
 kamug = "kamug.app:main"
 
+[project.scripts]
+kamug-export = "kamug.export:main"
+
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
 step = ["gmsh>=4.11"]   # STEP / IGES (CAD) dosyaları

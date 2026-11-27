@@ -310,6 +310,7 @@ class InfoBar(QWidget):
         row.addLayout(self.btn_box)
         self.buttons = {}
         for key, ic in (("series", "tv"), ("transcript", "notes"), ("edit", "cut"), ("snapshot", "camera"), ("subtitle", "subtitles"),
+                        ("download", "download"),
                         # "Klasörde göster": klasör + ok (düz klasör simgesi "klasör aç" düğmeleriyle karışıyordu)
                         ("reveal", "drive_file_move"), ("info", "info"), ("delete", "delete")):
             b = Pill("  " + t("act_" + key), ic)
@@ -320,6 +321,7 @@ class InfoBar(QWidget):
         self.btn_more = IconButton("more", t("more"), 36, 22)
         self.btn_more.clicked.connect(lambda: self.action.emit("more"))
         self._kind = None
+        self._stream = False          # indirmeden izlenen video: dosya düğmeleri yerine "İndir"
         self._series_mode = None      # "series" | "movie" | None — Dizi düğmesi yalnızca o zaman görünür
         self.apply_personalization()
 
@@ -352,6 +354,10 @@ class InfoBar(QWidget):
                 ok = ok and kind in ("video", "audio") and bool(prefs.get("transcript_enabled", False))
             elif key == "edit":
                 ok = ok and kind != "model"   # 3D modeller için düzenleyici yok
+            if key == "download":
+                ok = ok and self._stream
+            elif self._stream and key in ("series", "transcript", "edit", "reveal", "info", "delete"):
+                ok = False
             self._widget(key).setVisible(ok)
 
     def _apply_labels(self):
@@ -373,6 +379,7 @@ class InfoBar(QWidget):
         self.title.setText(item.title if item else "")
         self.title.setToolTip(item.path if item else "")
         self._kind = item.kind if item else None
+        self._stream = bool(item is not None and item.is_stream)
         self.buttons["edit"]._label = t("act_edit_image") if self._kind == "image" else t("act_edit")
         theme.icon(self.buttons["edit"], "edit" if self._kind == "image" else "cut", "text", 20)
         self._apply_visibility()

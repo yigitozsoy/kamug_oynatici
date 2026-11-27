@@ -307,7 +307,12 @@ class DownloadDialog(ThemedDialog):
         self.btn_go = QPushButton(t("yt_download"))
         self.btn_go.setObjectName("Primary")
         self.btn_go.clicked.connect(self._start)
+        # İndirmeden izle: video internetten oynatılır (tek video; liste ve fotoğraf gönderisi değil)
+        self.btn_watch = QPushButton(t("yt_watch"))
+        self.btn_watch.setToolTip(t("yt_watch_tip"))
+        self.btn_watch.clicked.connect(self._watch)
         btns.addWidget(self.btn_cancel)
+        btns.addWidget(self.btn_watch)
         btns.addWidget(self.btn_go)
         lay.addLayout(btns)
 
@@ -353,6 +358,9 @@ class DownloadDialog(ThemedDialog):
         if self.list_mode:
             ok = ok and (not self.entries or bool(self._selected()))
         self.btn_go.setEnabled(ok)
+        if hasattr(self, "btn_watch"):
+            self.btn_watch.setEnabled(url is not None and not busy and not self.list_mode
+                                      and not ytdl.playlist_only(url) and not ytdl.photo_first(url))
         self.bar.setVisible(busy)
 
     def _pick_folder(self):
@@ -481,6 +489,9 @@ class DownloadDialog(ThemedDialog):
         else:
             self._show_list(False)
             self.single = None
+            # "İndirmeden izle" için adresleri şimdiden al (basınca beklemeden açılsın)
+            if hasattr(self.win, "prefetch_stream"):
+                self.win.prefetch_stream(url, cookies="" if cookies == "file" else cookies)
 
             def got(e):
                 self.single = e
@@ -667,6 +678,19 @@ class DownloadDialog(ThemedDialog):
             self._fetch_info()
             return
         self._download()
+
+    def _watch(self):
+        url = self._url()
+        if not url or self.downloading:
+            return
+        self._save_prefs()
+        cookies = self.cmb_c.currentData() or ""
+        cookies = "" if cookies == "file" else cookies
+
+        def go():
+            self.accept()
+            self.win.play_stream(url, cookies=cookies)
+        self._ensure_tool(go)
 
     def _download(self):
         from .thumbs import FFMPEG

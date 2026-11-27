@@ -85,7 +85,9 @@ LAYOUT_LABELS = {
         "series": ("Dizi / film (yalnızca algılanınca)", "Series / movie (only when detected)"),
         "transcript": ("Transkript (Tercihler › Transkript açıksa)", "Transcript (when enabled in Preferences)"),
         "edit": ("Kes / Düzenle", "Cut / Edit"), "snapshot": ("Ekran görüntüsü", "Snapshot"),
-        "subtitle": ("Altyazı ekle", "Add subtitle"), "reveal": ("Klasörde göster", "Show in folder"),
+        "subtitle": ("Altyazı ekle", "Add subtitle"),
+        "download": ("İndir (yalnızca linkten izlerken)", "Download (only while watching a link)"),
+        "reveal": ("Klasörde göster", "Show in folder"),
         "info": ("Bilgi", "Info"), "delete": ("Sil", "Delete"), "more": ("Diğer ⋮", "More ⋮"),
     },
 }
@@ -516,6 +518,11 @@ class PreferencesDialog(ThemedDialog):
         lay.addWidget(_subsection(t("yt_title"), ""))
         lay.addWidget(_row(t("p_yt_enabled"), self._toggle("yt_enabled", self._personal_changed), t("p_yt_enabled_desc")))
         lay.addWidget(_row(t("yt_quality"), self._combo("yt_quality", [(t("yt_q_" + q), q) for q in ytdl.QUALITIES])))
+        lay.addWidget(_row(t("p_yt_link_action"), self._combo("yt_link_action", [(t("yt_action_ask"), "ask"),
+                                                                                 (t("yt_watch"), "stream")]),
+                           t("p_yt_link_action_desc")))
+        lay.addWidget(_row(t("yt_stream_quality"), self._combo("yt_stream_quality",
+                                                               [(t("yt_q_" + q), q) for q in ytdl.STREAM_QUALITIES])))
         self.lbl_yt = ElidedLabel(ytdl.default_folder())
         self.lbl_yt.setObjectName("Secondary")
         b = QPushButton(t("change"))

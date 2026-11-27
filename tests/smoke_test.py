@@ -419,6 +419,68 @@ def _transcript_core():
     assert links and links[0] == {"kamug": r"C:\v\ders.mp4", "t": 1.0}, links
 
 
+@check("indirmeden izle: yt-dlp çıktısı, VLC seçenekleri, akış öğesi, yeni düğmenin yeri")
+def _stream_core():
+    import json
+    from kamug import ytdl, layout_prefs as lp
+    from kamug.library import StreamItem, Library
+    d = {"webpage_url": "https://youtu.be/x", "title": "Başlık: a/b?", "duration": 12.5, "thumbnail": "https://i/x.jpg",
+         "requested_formats": [
+             {"url": "https://v", "vcodec": "avc1", "acodec": "none", "width": 1920, "height": 1080,
+              "http_headers": {"User-Agent": "UA"}},
+             {"url": "https://a", "vcodec": "none", "acodec": "mp4a.40.2"}]}
+    info = ytdl.parse_stream("[youtube] uyarı\n" + json.dumps(d))
+    assert info["url"] == "https://v" and info["audio"] == "https://a" and info["video"], info
+    assert info["duration_ms"] == 12500 and info["page"] == "https://youtu.be/x"
+    assert ytdl.vlc_options(info) == [":http-user-agent=UA", ":input-slave=https://a"], ytdl.vlc_options(info)
+    a = ytdl.parse_stream(json.dumps({"url": "https://only-audio", "vcodec": "none", "acodec": "opus", "title": "s"}))
+    assert a["url"] == "https://only-audio" and not a["video"] and a["audio"] is None, a
+    assert ytdl.parse_stream("ERROR: yok") is None
+    cmd = ytdl.stream_command("https://youtu.be/x", "720")
+    assert "-j" in cmd and cmd[-1] == "https://youtu.be/x" and "[height<=720]" in cmd[cmd.index("-f") + 1]
+    it = StreamItem(info, ytdl.vlc_options(info))
+    assert it.is_stream and it.is_video and it.is_playable and it.path == "https://youtu.be/x"
+    lib = Library()
+    assert lib.open_stream(it) is it and lib.all_items == [] and lib.neighbor(1) is None
+    # Kaydedilmiş eski düzende olmayan "download" düğmesi sona değil "subtitle"ın yanına girer
+    from kamug.config import prefs
+    old = prefs.get("info_layout")
+    prefs.data["info_layout"] = [["series", 1], ["subtitle", 0], ["more", 1]]
+    try:
+        keys = [k for k, _ in lp.layout("infobar")]
+        assert keys.index("download") == keys.index("subtitle") + 1, keys
+    finally:
+        prefs.data["info_layout"] = old
+
+
+@check("kamug-export: altyazı seçimi, json3, zaman damgaları, meta, kare benzerliği")
+def _export_core():
+    import json
+    import numpy as np
+    from kamug import export as ex
+    info = {"language": "tr", "subtitles": {"en": [{}], "tr-TR": [{}], "live_chat": [{}]},
+            "automatic_captions": {"tr-orig": [{}], "de": [{}]}}
+    assert ex.pick_subtitle(info) == ("subtitles", "tr-TR")
+    assert ex.pick_subtitle(dict(info, subtitles={"en": [{}]})) == ("auto_captions", "tr-orig")   # çeviri değil
+    assert ex.pick_subtitle(dict(info, subtitles={}), allow_auto=False) is None
+    assert ex.pick_subtitle({"subtitles": {"de": [{}], "en": [{}]}}) == ("subtitles", "en")      # dil bilinmiyor
+    j3 = json.dumps({"events": [{"tStartMs": 0, "dDurationMs": 5000, "segs": [{"utf8": "merhaba "}, {"utf8": "dünya"}]},
+                                {"tStartMs": 2000, "aAppend": 1, "segs": [{"utf8": "\n"}]},
+                                {"tStartMs": 3000, "dDurationMs": 2000, "segs": [{"utf8": "[Müzik]"}]},
+                                {"tStartMs": 4000, "dDurationMs": 1500, "segs": [{"utf8": "ikinci"}]}]})
+    segs = ex.parse_json3(j3)
+    assert segs == [{"s": 0, "e": 4000, "t": "merhaba dünya"}, {"s": 4000, "e": 5500, "t": "ikinci"}], segs
+    assert ex.transcript_text(segs[:1]) == "[00:00:00.000 --> 00:00:04.000] merhaba dünya\n"
+    assert ex.ts_full(3723456) == "01:02:03.456"
+    assert ex.frame_stamp(12.7) == "00m12s" and ex.frame_stamp(3725) == "01h02m05s"
+    m = ex.build_meta({"title": "a", "uploader": "k", "upload_date": "20240501", "duration": 75})
+    assert m["channel"] == "k" and m["upload_date"] == "2024-05-01" and m["duration_text"] == "1:15", m
+    a = np.full((36, 64), 100, np.int16)
+    b = a.copy()
+    b[:12, :20] = 230                                   # yeni madde / başka slayt
+    assert ex._same_frame(a, a + 2) and not ex._same_frame(a, b)
+
+
 @check("gelişmiş okuma: çıktı temizliği, formül gösterimi, sayfa gruplama, metin dışa aktarma")
 def _vlm_core():
     import numpy as np

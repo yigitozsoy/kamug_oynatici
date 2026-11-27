@@ -81,6 +81,8 @@ DEFAULTS = {
     "yt_subs": True,            # altyazıları da indir
     "yt_content": "both",       # both | video (sessiz) | audio
     "yt_parallel": 1,           # oynatma listesi: 1 = sırayla, 3 = aynı anda
+    "yt_link_action": "ask",    # Ctrl+V / sürüklenen link: ask (indirme penceresi) | stream (indirmeden izle)
+    "yt_stream_quality": "1080",  # indirmeden izlerken en yüksek çözünürlük
     "transcript_enabled": False,  # Transkript paneli (konuşma + ekrandaki yazılar)
     "tr_model": "balanced",     # fast | balanced | best (whisper.cpp modeli)
     "tr_lang": "auto",          # auto | tr | en

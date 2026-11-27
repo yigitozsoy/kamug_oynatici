@@ -340,3 +340,68 @@ def gallery_error(text):
     """gallery-dl çıktısından okunur hata satırı."""
     errs = [ln.strip() for ln in (text or "").splitlines() if "error" in ln.lower()]
     return (errs[-1] if errs else (text or "").strip()[-300:])
+
+
+# ---------------------------------------------------------------- indirmeden izle (akış)
+STREAM_QUALITIES = ["best", "1080", "720", "480"]
+
+
+def stream_command(url, quality="1080", cookies="", impersonate=False):
+    """İndirmeden oynatmak için doğrudan adresleri alır (tek JSON satırı, bkz. parse_stream).
+    Ses: stereo m4a önce (YouTube'un 5.1 sesi VLC'de açılışı ~5 sn geciktiriyor); aynı çözünürlükte H.264 önce
+    (her bilgisayarda donanımla çözülür)."""
+    h = "" if quality == "best" else f"[height<={quality}]"
+    fmt = f"bv*{h}+ba[ext=m4a][audio_channels<=2]/bv*{h}+ba/b{h}/b"
+    res = "res" if quality == "best" else f"res:{quality}"
+    cmd = [exe_path(), "--no-playlist", "--no-warnings", "-j", "-f", fmt, "-S", f"{res},fps,vcodec:h264,acodec:m4a"]
+    return cmd + _common(cookies, impersonate) + ["--", url]
+
+
+def parse_stream(text, url=""):
+    """yt-dlp -j çıktısı → {page, title, url, audio, headers, video, duration_ms, width, height, thumb, live}
+    ya da None. url: görüntünün (yoksa sesin) adresi; audio: ayrı ses akışının adresi (yoksa None)."""
+    import json
+    d = None
+    for line in reversed((text or "").splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                d = json.loads(line)
+                break
+            except ValueError:
+                continue
+    if not isinstance(d, dict):
+        return None
+    fs = [f for f in (d.get("requested_formats") or [d]) if isinstance(f, dict) and f.get("url")]
+    if not fs:
+        return None
+    vid = next((f for f in fs if f.get("vcodec") != "none"), None)
+    aud = next((f for f in fs if f is not vid and f.get("acodec") != "none"), None)
+    main = vid or aud
+    dur = d.get("duration")
+    return {
+        "page": d.get("webpage_url") or d.get("original_url") or url,
+        "title": d.get("title") or d.get("id") or url,
+        "url": main["url"],
+        "audio": aud["url"] if vid is not None and aud is not None else None,
+        "headers": dict(main.get("http_headers") or d.get("http_headers") or {}),
+        "video": vid is not None,
+        "duration_ms": int(float(dur) * 1000) if dur else -1,
+        "width": int(main.get("width") or d.get("width") or 0),
+        "height": int(main.get("height") or d.get("height") or 0),
+        "thumb": d.get("thumbnail") or "",
+        "live": bool(d.get("is_live")),
+    }
+
+
+def vlc_options(info):
+    """Akış için VLC ortam seçenekleri: tarayıcı kimliği, yönlendiren ve ayrı ses akışı."""
+    opts = []
+    h = {k.lower(): v for k, v in (info.get("headers") or {}).items()}
+    if h.get("user-agent"):
+        opts.append(":http-user-agent=" + h["user-agent"])
+    if h.get("referer"):
+        opts.append(":http-referrer=" + h["referer"])
+    if info.get("audio"):
+        opts.append(":input-slave=" + info["audio"])
+    return opts
